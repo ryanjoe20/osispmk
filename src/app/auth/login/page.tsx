@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import { supabaseClient } from '@/lib/auth'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Loader2 } from 'lucide-react'
+import { Loader2, ArrowLeft, ShieldCheck, CheckCircle2 } from 'lucide-react'
 import Image from 'next/image'
+import Link from 'next/link'
 import BrandLogo from '@/components/BrandLogo'
 
 export default function VoterLogin() {
@@ -21,109 +22,164 @@ export default function VoterLogin() {
       const { data: voter, error } = await supabaseClient
         .from('voters')
         .select('*')
-        .eq('nis', nis)
+        .eq('nis', nis.trim())
         .single()
 
       if (error || !voter) {
-        setError('Maaf, NIS Anda tidak ditemukan. Hubungi Admin untuk informasi lebih lanjut.')
+        setError('Maaf, NIS Anda tidak ditemukan. Hubungi Admin atau panitia untuk verifikasi data.')
         return
       }
 
       if (voter.has_voted) {
-        setError('Anda sudah melakukan voting. Terima kasih telah berkontribusi pada pemilihan OSIS.')
+        setError('Anda sudah melakukan voting. Terima kasih telah menggunakan hak suara Anda.')
         return
       }
 
       document.cookie = `voter=${JSON.stringify(voter)}; path=/`
       window.location.href = '/vote'
 
-    } catch (error) {
-      console.error('Login error:', error)
-      setError('Terjadi kesalahan saat login')
+    } catch (err) {
+      console.error('Login error:', err)
+      setError('Terjadi kesalahan saat memproses login. Silakan coba lagi.')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
-      <div className="container mx-auto px-4 h-screen flex flex-col items-center justify-center">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="w-full max-w-md"
-        >
-          {/* Decorative Elements */}
-          <div className="absolute top-0 left-0 w-full h-64 overflow-hidden -z-10">
-            <div className="absolute w-96 h-96 -top-48 -left-48 bg-blue-200 rounded-full mix-blend-multiply filter blur-xl opacity-70" />
-            <div className="absolute w-96 h-96 -top-48 -right-48 bg-indigo-200 rounded-full mix-blend-multiply filter blur-xl opacity-70" />
-          </div>
+    <div className="min-h-screen bg-slate-50 flex items-stretch overflow-hidden relative">
+      {/* Tombol Kembali ke Beranda */}
+      <Link
+        href="/"
+        className="absolute top-4 left-4 z-30 inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/90 backdrop-blur-md border border-slate-200 text-xs sm:text-sm font-semibold text-slate-700 hover:text-blue-600 hover:bg-white hover:shadow-md transition-all duration-200"
+      >
+        <ArrowLeft className="w-4 h-4" />
+        <span>Beranda</span>
+      </Link>
 
-          {/* Logo and Title */}
-          <div className="text-center mb-8 flex flex-col items-center">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.4 }}
-              className="mb-4"
-            >
-              <BrandLogo size="lg" variant="squircle" />
-            </motion.div>
-            <motion.h1 
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="text-4xl font-extrabold tracking-tight text-slate-900"
-            >
-              Pilih<span className="text-blue-600">Ku</span>{' '}
-              <span className="text-xs uppercase font-bold tracking-wider px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200/80 align-middle">
-                OSIS
+      {/* Bagian Kiri: Hero Illustration Showcase (Lebar & Elegan) */}
+      <div className="hidden lg:flex lg:w-1/2 xl:w-7/12 relative bg-gradient-to-br from-blue-700 via-indigo-800 to-slate-950 p-12 flex-col justify-between overflow-hidden">
+        {/* Background Image Overlay with Soft Dark Gradient */}
+        <div className="absolute inset-0 z-0">
+          <Image
+            src="/images/hero-voting-illustration.png"
+            alt="Ilustrasi E-Voting OSIS"
+            fill
+            priority
+            sizes="50vw"
+            className="object-cover object-center opacity-30 mix-blend-luminosity scale-105"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-blue-950/80 to-blue-900/40 backdrop-blur-[1px]" />
+        </div>
+
+        {/* Ambient Glows */}
+        <div className="absolute -top-24 -left-24 w-96 h-96 bg-blue-500/30 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-indigo-500/25 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Header Kiri */}
+        <div className="relative z-10 flex items-center gap-3">
+          <BrandLogo size="md" variant="squircle" />
+          <div>
+            <h2 className="text-xl font-extrabold text-white tracking-tight flex items-center gap-2">
+              Pilih<span className="text-blue-400">Ku</span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-200 border border-blue-400/30">
+                E-VOTING
               </span>
-            </motion.h1>
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.3 }}
-              className="mt-2 text-sm text-slate-600 font-medium"
-            >
-              Masuk dengan NIS untuk menggunakan hak suaramu
-            </motion.p>
+            </h2>
+            <p className="text-xs text-blue-200/80 font-medium">SMK Pratama Mulya Karawang</p>
+          </div>
+        </div>
+
+        {/* Showcase Illustration Card di Tengah Kiri */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.6 }}
+          className="relative z-10 my-auto py-6 flex flex-col items-center"
+        >
+          <div className="relative w-full max-w-md aspect-square rounded-3xl overflow-hidden p-3 bg-white/10 backdrop-blur-md border border-white/20 shadow-2xl">
+            <div className="relative w-full h-full rounded-2xl overflow-hidden bg-slate-900/60">
+              <Image
+                src="/images/hero-voting-illustration.png"
+                alt="Hero E-Voting Illustration"
+                fill
+                priority
+                sizes="(max-width: 1200px) 45vw, 480px"
+                className="object-cover"
+              />
+            </div>
+
           </div>
 
-          {/* Login Card */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.4 }}
-            className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-8 border border-gray-100 relative overflow-hidden"
-          >
-            {/* Decorative Corner */}
-            <div className="absolute -top-12 -right-12 w-24 h-24 bg-blue-50 rounded-full" />
-            <div className="absolute -bottom-12 -left-12 w-24 h-24 bg-indigo-50 rounded-full" />
+          <div className="mt-8 text-center max-w-md">
+            <h3 className="text-2xl font-black text-white tracking-tight">
+              Gunakan Hak Pilihmu Sekarang
+            </h3>
+            <p className="text-sm text-blue-100/85 mt-2 leading-relaxed">
+              Satu suara Anda menentukan arah dan inovasi kepemimpinan OSIS & MPK masa depan sekolah.
+            </p>
+          </div>
+        </motion.div>
 
+        {/* Security Footer Info */}
+        <div className="relative z-10 flex items-center justify-between text-xs text-blue-200/70 border-t border-white/10 pt-4">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>Terverifikasi Kriptografi Database</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <CheckCircle2 className="w-4 h-4 text-blue-400" />
+            <span>Pemilihan Jujur & Adil</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Bagian Kanan: Form Login NIS */}
+      <div className="w-full lg:w-1/2 xl:w-5/12 flex items-center justify-center p-6 sm:p-10 lg:p-12 relative z-10">
+        <div className="w-full max-w-md">
+          {/* Logo & Judul Mobile / Form Header */}
+          <div className="text-center mb-8 flex flex-col items-center">
+            {/* Logo Sekolah */}
+            <div className="mb-4 relative w-20 h-20 sm:w-24 sm:h-24 drop-shadow-md transition-transform hover:scale-105 duration-200">
+              <Image
+                src="/logo.PNG"
+                alt="Logo Sekolah"
+                fill
+                priority
+                className="object-contain"
+              />
+            </div>
+
+            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
+              Masuk Bilik Suara
+            </h1>
+            <p className="mt-2 text-sm text-slate-600 font-medium">
+              Masukkan Kode Unik untuk memulai proses voting
+            </p>
+          </div>
+
+          {/* Form Card */}
+          <div className="bg-white rounded-3xl shadow-xl border border-slate-200/80 p-7 sm:p-9 relative overflow-hidden">
             <AnimatePresence mode="wait">
               {error && (
                 <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="mb-6 p-4 bg-red-50 border border-red-100 rounded-2xl"
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3"
                 >
-                  <p className="text-sm text-red-600 flex items-center">
-                    <svg className="w-4 h-4 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                    </svg>
-                    {error}
-                  </p>
+                  <svg className="w-5 h-5 text-red-600 shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                  <p className="text-xs sm:text-sm font-medium text-red-700 leading-snug">{error}</p>
                 </motion.div>
               )}
             </AnimatePresence>
 
-            <form onSubmit={handleLogin} className="space-y-6 relative z-10">
+            <form onSubmit={handleLogin} className="space-y-6">
               <div>
-                <label htmlFor="nis" className="block text-sm font-medium text-gray-700 mb-2">
-                  Nomor Induk Siswa (NIS)
+                <label htmlFor="nis" className="block text-sm font-bold text-slate-700 mb-2">
+                  Kode Unik Siswa
                 </label>
                 <div className="relative">
                   <input
@@ -131,75 +187,53 @@ export default function VoterLogin() {
                     type="text"
                     value={nis}
                     onChange={(e) => setNis(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white/50 backdrop-blur-sm"
-                    placeholder="Masukkan NIS Anda"
+                    className="w-full px-4 py-3.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-slate-50/70 focus:bg-white text-slate-900 font-semibold tracking-wide placeholder:font-normal placeholder:text-slate-400"
+                    placeholder="Contoh: 202410123"
                     required
-                    autoComplete='off'
+                    autoComplete="off"
                     disabled={loading}
+                    autoFocus
                   />
-                  <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-3.5 pointer-events-none">
+                    <svg className="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
                   </div>
                 </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  Kode Unik yang tertera pada kartu undangan pemilihan.
+                </p>
               </div>
 
               <motion.button
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.99 }}
                 type="submit"
-                disabled={loading}
-                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 px-4 rounded-xl 
-                         hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 
-                         focus:ring-blue-500 focus:ring-offset-2 transition-all duration-200 
-                         disabled:opacity-50 disabled:cursor-not-allowed font-medium relative overflow-hidden"
+                disabled={loading || !nis.trim()}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3.5 px-4 rounded-xl font-bold shadow-lg shadow-blue-500/25 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                <div className="relative z-10">
-                  {loading ? (
-                    <span className="flex items-center justify-center">
-                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                      Memproses...
-                    </span>
-                  ) : (
-                    'Masuk'
-                  )}
-                </div>
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-indigo-600 opacity-0 hover:opacity-100 transition-opacity duration-200" />
+                {loading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Memverifikasi NIS...</span>
+                  </>
+                ) : (
+                  <span>Masuk & Berikan Suara</span>
+                )}
               </motion.button>
             </form>
-          </motion.div>
+          </div>
 
-          {/* Footer Text */}
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.6 }}
-            className="mt-8 text-center text-sm text-gray-600"
-          >
-            Gunakan NIS yang telah terdaftar untuk melakukan voting
-          </motion.p>
-
-          {/* Build Credit */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.8 }}
-            className="mt-8 text-center"
-          >
-            <a
-              href="https://github.com/bimadevs"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
-            >
-              Build by{' '}
-              <span className="font-medium bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                BimaDev
-              </span>
-            </a>
-          </motion.div>
-        </motion.div>
+          {/* Footer Info */}
+          <div className="mt-8 text-center space-y-2">
+            <p className="text-xs text-slate-500">
+              Gunakan hak suara secara jujur, langsung, bebas, dan rahasia.
+            </p>
+            <p className="text-xs text-slate-400">
+              SMK Pratama Mulya Karawang • E-Voting System
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   )

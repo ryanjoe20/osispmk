@@ -36,18 +36,22 @@ ChartJS.register(
   Filler
 )
 
+interface CandidateResult {
+  candidateNumber: number
+  ketuaName: string
+  wakilName: string
+  voteCount: number
+  percentage: number
+  category?: 'osis' | 'mpk'
+}
+
 interface VotingStats {
   totalVoters: number
   votedCount: number
   notVotedCount: number
   votingPercentage: number
-  candidateResults: {
-    candidateNumber: number
-    ketuaName: string
-    wakilName: string
-    voteCount: number
-    percentage: number
-  }[]
+  osisResults: CandidateResult[]
+  mpkResults: CandidateResult[]
   votingHistory?: {
     hour: string
     count: number
@@ -99,6 +103,7 @@ export default function ResultsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState('overview')
+  const [activeCategory, setActiveCategory] = useState<'osis' | 'mpk'>('osis')
   const [classStats, setClassStats] = useState<ClassStats[]>([])
   const [classFilter, setClassFilter] = useState('')
   const [sortConfig, setSortConfig] = useState<{
@@ -123,7 +128,7 @@ export default function ResultsPage() {
       // Fetch total voters and their status
       const { data: voters, error: votersError } = await supabaseClient
         .from('voters')
-        .select('has_voted')
+        .select('has_voted, has_voted_osis, has_voted_mpk')
 
       if (votersError) throw votersError
 
@@ -138,7 +143,7 @@ export default function ResultsPage() {
       // Fetch votes with candidate details
       const { data: votes, error: votesError } = await supabaseClient
         .from('votes')
-        .select('candidate_id')
+        .select('candidate_id, category')
 
       if (votesError) throw votesError
 
@@ -146,22 +151,47 @@ export default function ResultsPage() {
       const totalVoters = voters.length
       const votedCount = voters.filter(v => v.has_voted).length
       const notVotedCount = totalVoters - votedCount
-      const votingPercentage = (votedCount / totalVoters) * 100
+      const votingPercentage = totalVoters > 0 ? (votedCount / totalVoters) * 100 : 0
 
       // Count votes for each candidate
-      const voteCounts = new Map()
+      const voteCounts = new Map<string, number>()
       votes.forEach(vote => {
         voteCounts.set(vote.candidate_id, (voteCounts.get(vote.candidate_id) || 0) + 1)
       })
 
-      // Prepare candidate results
-      const candidateResults = candidates.map(candidate => ({
-        candidateNumber: candidate.candidate_number,
-        ketuaName: candidate.ketua_name,
-        wakilName: candidate.wakil_name,
-        voteCount: voteCounts.get(candidate.id) || 0,
-        percentage: votedCount > 0 ? ((voteCounts.get(candidate.id) || 0) / votedCount) * 100 : 0
-      }))
+      // Pisahkan kandidat berdasarkan category (default 'osis')
+      const osisCandidates = candidates.filter(c => (c.category || 'osis') === 'osis')
+      const mpkCandidates = candidates.filter(c => c.category === 'mpk')
+
+      // Hitung total suara OSIS dan MPK
+      const totalOsisVotes = osisCandidates.reduce((sum, c) => sum + (voteCounts.get(c.id) || 0), 0)
+      const totalMpkVotes = mpkCandidates.reduce((sum, c) => sum + (voteCounts.get(c.id) || 0), 0)
+
+      // Prepare OSIS candidate results
+      const osisResults: CandidateResult[] = osisCandidates.map(candidate => {
+        const count = voteCounts.get(candidate.id) || 0
+        return {
+          candidateNumber: candidate.candidate_number,
+          ketuaName: candidate.ketua_name,
+          wakilName: candidate.wakil_name,
+          voteCount: count,
+          percentage: totalOsisVotes > 0 ? (count / totalOsisVotes) * 100 : 0,
+          category: 'osis'
+        }
+      })
+
+      // Prepare MPK candidate results
+      const mpkResults: CandidateResult[] = mpkCandidates.map(candidate => {
+        const count = voteCounts.get(candidate.id) || 0
+        return {
+          candidateNumber: candidate.candidate_number,
+          ketuaName: candidate.ketua_name,
+          wakilName: candidate.wakil_name,
+          voteCount: count,
+          percentage: totalMpkVotes > 0 ? (count / totalMpkVotes) * 100 : 0,
+          category: 'mpk'
+        }
+      })
 
       // Add voting history data
       const { data: votesHistory } = await supabaseClient
@@ -185,7 +215,8 @@ export default function ResultsPage() {
         votedCount,
         notVotedCount,
         votingPercentage,
-        candidateResults,
+        osisResults,
+        mpkResults,
         votingHistory
       })
     } catch (error) {
@@ -235,9 +266,20 @@ export default function ResultsPage() {
     if (!stats) return
 
     try {
-      // Data voting per kandidat
-      const candidateData = stats.candidateResults.map(result => ({
+      // Data voting OSIS
+      const osisData = stats.osisResults.map(result => ({
         'Nomor Urut': result.candidateNumber,
+        'Kategori': 'OSIS',
+        'Nama Ketua': result.ketuaName,
+        'Nama Wakil': result.wakilName,
+        'Jumlah Suara': result.voteCount,
+        'Persentase': `${result.percentage.toFixed(1)}%`
+      }))
+
+      // Data voting MPK
+      const mpkData = stats.mpkResults.map(result => ({
+        'Nomor Urut': result.candidateNumber,
+        'Kategori': 'MPK',
         'Nama Ketua': result.ketuaName,
         'Nama Wakil': result.wakilName,
         'Jumlah Suara': result.voteCount,
@@ -265,13 +307,14 @@ export default function ResultsPage() {
       const wb = utils.book_new()
 
       // Tambahkan semua sheet
-      utils.book_append_sheet(wb, utils.json_to_sheet(candidateData), 'Hasil Voting')
+      utils.book_append_sheet(wb, utils.json_to_sheet(osisData), 'Hasil OSIS')
+      utils.book_append_sheet(wb, utils.json_to_sheet(mpkData), 'Hasil MPK')
       utils.book_append_sheet(wb, utils.json_to_sheet(classData), 'Statistik Kelas')
       utils.book_append_sheet(wb, utils.json_to_sheet(summaryData), 'Ringkasan')
 
       // Download file
       const date = new Date().toISOString().split('T')[0]
-      writeFile(wb, `hasil-pemilihan-${date}.xlsx`)
+      writeFile(wb, `hasil-pemilihan-osis-mpk-${date}.xlsx`)
 
       toast.success('Data berhasil diexport')
     } catch (error) {
@@ -325,15 +368,23 @@ export default function ResultsPage() {
   
   if (!stats) return null
 
+  const currentCategoryResults = activeCategory === 'osis' ? stats.osisResults : stats.mpkResults
+
   const barChartData = {
-    labels: stats.candidateResults.map(r => `Paslon ${r.candidateNumber}`),
+    labels: currentCategoryResults.map(r => `Paslon ${r.candidateNumber}`),
     datasets: [{
-      label: 'Jumlah Suara',
-      data: stats.candidateResults.map(r => r.voteCount),
-      backgroundColor: [
-        'rgba(59, 130, 246, 0.8)',
-        'rgba(99, 102, 241, 0.8)',
-        'rgba(139, 92, 246, 0.8)',
+      label: `Jumlah Suara (${activeCategory.toUpperCase()})`,
+      data: currentCategoryResults.map(r => r.voteCount),
+      backgroundColor: activeCategory === 'osis' ? [
+        'rgba(59, 130, 246, 0.85)',
+        'rgba(99, 102, 241, 0.85)',
+        'rgba(14, 165, 233, 0.85)',
+        'rgba(168, 85, 247, 0.85)',
+      ] : [
+        'rgba(99, 102, 241, 0.85)',
+        'rgba(139, 92, 246, 0.85)',
+        'rgba(236, 72, 153, 0.85)',
+        'rgba(20, 184, 166, 0.85)',
       ],
       borderRadius: 8,
     }]
@@ -443,9 +494,9 @@ export default function ResultsPage() {
           </motion.div>
         </div>
 
-        {/* Tabs */}
+        {/* Tabs & Kategori Selector */}
         <div className="bg-white rounded-xl shadow-sm p-6 mb-8">
-          <div className="border-b border-gray-200 mb-6">
+          <div className="border-b border-gray-200 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <nav className="-mb-px flex space-x-8">
               {['overview', 'details', 'trends'].map((tab) => (
                 <button
@@ -462,14 +513,58 @@ export default function ResultsPage() {
                 </button>
               ))}
             </nav>
+
+            {/* Kategori Switcher: OSIS vs MPK */}
+            <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl self-start sm:self-auto mb-2 sm:mb-0">
+              <button
+                type="button"
+                onClick={() => setActiveCategory('osis')}
+                className={`py-1.5 px-3.5 rounded-lg font-bold text-xs sm:text-sm transition-all flex items-center gap-1.5 ${
+                  activeCategory === 'osis'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <span>🏛️ OSIS</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                  activeCategory === 'osis' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'
+                }`}>
+                  {stats.osisResults.reduce((s, r) => s + r.voteCount, 0)} suara
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveCategory('mpk')}
+                className={`py-1.5 px-3.5 rounded-lg font-bold text-xs sm:text-sm transition-all flex items-center gap-1.5 ${
+                  activeCategory === 'mpk'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <span>⚖️ MPK</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                  activeCategory === 'mpk' ? 'bg-indigo-500 text-white' : 'bg-gray-200 text-gray-700'
+                }`}>
+                  {stats.mpkResults.reduce((s, r) => s + r.voteCount, 0)} suara
+                </span>
+              </button>
+            </div>
           </div>
 
           {/* Tab Content */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {activeTab === 'overview' && (
               <>
-                <div className="bg-white p-6 rounded-xl">
-                  <h3 className="text-lg font-semibold mb-4">Perolehan Suara</h3>
+                <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-800">
+                      Perolehan Suara - {activeCategory.toUpperCase()}
+                    </h3>
+                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">
+                      Total: {currentCategoryResults.reduce((s, r) => s + r.voteCount, 0)} suara masuk
+                    </span>
+                  </div>
                   <Bar
                     data={barChartData}
                     options={{
@@ -495,8 +590,8 @@ export default function ResultsPage() {
                     }}
                   />
                 </div>
-                <div className="bg-white p-6 rounded-xl">
-                  <h3 className="text-lg font-semibold mb-4">Partisipasi Pemilih</h3>
+                <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                  <h3 className="text-lg font-semibold mb-4 text-gray-800">Partisipasi Pemilih Keseluruhan</h3>
                   <Doughnut
                     data={doughnutData}
                     options={{
@@ -514,8 +609,8 @@ export default function ResultsPage() {
             )}
 
             {activeTab === 'trends' && (
-              <div className="col-span-2 bg-white p-6 rounded-xl">
-                <h3 className="text-lg font-semibold mb-4">Tren Voting per Jam</h3>
+              <div className="col-span-2 bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                <h3 className="text-lg font-semibold mb-4 text-gray-800">Tren Waktu Suara Masuk per Jam</h3>
                 <Line
                   data={votingTrendData}
                   options={{
@@ -545,7 +640,15 @@ export default function ResultsPage() {
 
             {activeTab === 'details' && (
               <div className="col-span-2">
-                <div className="overflow-x-auto">
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-gray-900">
+                    Rincian Perolehan Suara Calon {activeCategory.toUpperCase()}
+                  </h3>
+                  <span className="text-xs text-gray-500">
+                    Gunakan tombol switch kategori di atas untuk beralih antara OSIS dan MPK
+                  </span>
+                </div>
+                <div className="overflow-x-auto border border-gray-200 rounded-xl">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead>
                       <tr>
@@ -567,25 +670,33 @@ export default function ResultsPage() {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {stats.candidateResults.map((result) => (
-                        <tr key={result.candidateNumber}>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            Paslon {result.candidateNumber}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {result.ketuaName}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {result.wakilName}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {result.voteCount}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {result.percentage.toFixed(1)}%
+                      {currentCategoryResults.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-6 py-8 text-center text-sm text-gray-500">
+                            Belum ada perolehan suara untuk kandidat {activeCategory.toUpperCase()}.
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        currentCategoryResults.map((result) => (
+                          <tr key={result.candidateNumber}>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
+                              Paslon {result.candidateNumber}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                              {result.ketuaName}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                              {result.wakilName}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-600">
+                              {result.voteCount} suara
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                              {result.percentage.toFixed(1)}%
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>

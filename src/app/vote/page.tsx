@@ -18,10 +18,11 @@ import {
   ArrowRight,
   User,
   Check,
-  Lock,
   ChevronRight,
+  ChevronLeft,
   Info,
-  Users
+  Users,
+  Lock
 } from 'lucide-react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import BrandLogo from '@/components/BrandLogo'
@@ -39,6 +40,7 @@ interface Candidate {
   program_kerja: string
   ketua_photo_url?: string
   wakil_photo_url?: string
+  category?: 'osis' | 'mpk'
 }
 
 interface Voter {
@@ -47,6 +49,8 @@ interface Voter {
   full_name: string
   class: string
   has_voted: boolean
+  has_voted_osis?: boolean
+  has_voted_mpk?: boolean
 }
 
 type TabType = 'visi' | 'misi' | 'program'
@@ -156,14 +160,26 @@ export default function VotePage() {
   const router = useRouter()
   const [voter, setVoter] = useState<Voter | null>(null)
   const [isCheckingAuth, setIsCheckingAuth] = useState(true)
-  const [candidates, setCandidates] = useState<Candidate[]>([])
-  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null)
+
+  // Data kandidat terpisah
+  const [osisCandidates, setOsisCandidates] = useState<Candidate[]>([])
+  const [mpkCandidates, setMpkCandidates] = useState<Candidate[]>([])
+  const [isLoadingCandidates, setIsLoadingCandidates] = useState(true)
+
+  // Step wizard: 1 = Pilih OSIS, 2 = Pilih MPK
+  const [step, setStep] = useState<1 | 2>(1)
+
+  // Pilihan
+  const [selectedOsisId, setSelectedOsisId] = useState<string | null>(null)
+  const [selectedMpkId, setSelectedMpkId] = useState<string | null>(null)
+
+  // Dialog & status
+  const [modalCandidate, setModalCandidate] = useState<Candidate | null>(null)
+  const [modalActiveTab, setModalActiveTab] = useState<TabType>('visi')
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [stats, setStats] = useState({ totalVoters: 0, votedCount: 0 })
-  const [activeTabs, setActiveTabs] = useState<Record<string, TabType>>({})
-  const [isLoadingCandidates, setIsLoadingCandidates] = useState(true)
 
   useEffect(() => {
     let isMounted = true
@@ -208,19 +224,17 @@ export default function VotePage() {
 
       // 2. Fetch Candidates
       try {
-        const { data, error } = await supabaseClient
+        const { data, error: candError } = await supabaseClient
           .from('candidates')
           .select('*')
           .order('candidate_number', { ascending: true })
 
-        if (error) throw error
-        if (isMounted) {
-          setCandidates(data || [])
-          const initialTabs: Record<string, TabType> = {}
-          data?.forEach(c => {
-            initialTabs[c.id] = 'visi'
-          })
-          setActiveTabs(initialTabs)
+        if (candError) throw candError
+        if (isMounted && data) {
+          const osis = data.filter((c: Candidate) => (c.category || 'osis') === 'osis')
+          const mpk = data.filter((c: Candidate) => c.category === 'mpk')
+          setOsisCandidates(osis)
+          setMpkCandidates(mpk)
           setIsLoadingCandidates(false)
         }
       } catch (err) {
@@ -255,51 +269,102 @@ export default function VotePage() {
     }
   }, [])
 
-  const selectedCandidate = useMemo(() => {
-    return candidates.find(c => c.id === selectedCandidateId) || null
-  }, [candidates, selectedCandidateId])
+  // Kandidat aktif berdasarkan step
+  const activeCandidates = useMemo(() => {
+    return step === 1 ? osisCandidates : mpkCandidates
+  }, [step, osisCandidates, mpkCandidates])
 
-  const selectedTheme = useMemo(() => {
-    if (!selectedCandidate) return CANDIDATE_THEMES[0]
-    const candidateIndex = candidates.findIndex(c => c.id === selectedCandidate.id)
-    return getCandidateTheme(selectedCandidate.candidate_number, candidateIndex)
-  }, [selectedCandidate, candidates])
+  const selectedCandidateId = step === 1 ? selectedOsisId : selectedMpkId
 
-  function handleTabChange(candidateId: string, tab: TabType) {
-    setActiveTabs(prev => ({
-      ...prev,
-      [candidateId]: tab
-    }))
+  const selectedOsisCandidate = useMemo(() => {
+    return osisCandidates.find(c => c.id === selectedOsisId) || null
+  }, [osisCandidates, selectedOsisId])
+
+  const selectedMpkCandidate = useMemo(() => {
+    return mpkCandidates.find(c => c.id === selectedMpkId) || null
+  }, [mpkCandidates, selectedMpkId])
+
+  const currentSelectedCandidate = step === 1 ? selectedOsisCandidate : selectedMpkCandidate
+
+  const currentTheme = useMemo(() => {
+    if (!currentSelectedCandidate) return CANDIDATE_THEMES[0]
+    const index = activeCandidates.findIndex(c => c.id === currentSelectedCandidate.id)
+    return getCandidateTheme(currentSelectedCandidate.candidate_number, index)
+  }, [currentSelectedCandidate, activeCandidates])
+
+  function handleSelectCandidate(candidateId: string) {
+    if (step === 1) {
+      setSelectedOsisId(candidateId)
+    } else {
+      setSelectedMpkId(candidateId)
+    }
+  }
+
+  function handleOpenDetail(candidate: Candidate) {
+    setModalCandidate(candidate)
+    setModalActiveTab('visi')
   }
 
   async function handleVote() {
-    if (!selectedCandidateId || !voter) return
+    if (!voter) return
+
+    // Validasi kedua pilihan jika ada kandidat di masing-masing kategori
+    if (osisCandidates.length > 0 && !selectedOsisId) {
+      toast.error('Silakan tentukan pilihan Ketua & Wakil OSIS terlebih dahulu.')
+      setStep(1)
+      setShowConfirmModal(false)
+      return
+    }
+
+    if (mpkCandidates.length > 0 && !selectedMpkId) {
+      toast.error('Silakan tentukan pilihan Ketua & Wakil MPK terlebih dahulu.')
+      setStep(2)
+      setShowConfirmModal(false)
+      return
+    }
 
     setLoading(true)
     setError(null)
 
     try {
-      // 1. Simpan suara
-      const { error: voteError } = await supabaseClient
-        .from('votes')
-        .insert([
-          {
-            voter_id: voter.id,
-            candidate_id: selectedCandidateId
-          }
-        ])
+      // 1. Simpan suara masuk (OSIS & MPK)
+      const votesToInsert = []
+      if (selectedOsisId) {
+        votesToInsert.push({
+          voter_id: voter.id,
+          candidate_id: selectedOsisId,
+          category: 'osis'
+        })
+      }
+      if (selectedMpkId) {
+        votesToInsert.push({
+          voter_id: voter.id,
+          candidate_id: selectedMpkId,
+          category: 'mpk'
+        })
+      }
 
-      if (voteError) throw voteError
+      if (votesToInsert.length > 0) {
+        const { error: voteError } = await supabaseClient
+          .from('votes')
+          .insert(votesToInsert)
+
+        if (voteError) throw voteError
+      }
 
       // 2. Perbarui status has_voted pemilih
       const { error: updateError } = await supabaseClient
         .from('voters')
-        .update({ has_voted: true })
+        .update({
+          has_voted: true,
+          has_voted_osis: Boolean(selectedOsisId),
+          has_voted_mpk: Boolean(selectedMpkId)
+        })
         .eq('id', voter.id)
 
       if (updateError) throw updateError
 
-      toast.success('Suara Anda berhasil dicatat!')
+      toast.success('Suara OSIS & MPK Anda berhasil dicatat!')
       setShowConfirmModal(false)
 
       // 3. Arahkan ke halaman sukses
@@ -320,33 +385,32 @@ export default function VotePage() {
     return Math.round((stats.votedCount / stats.totalVoters) * 100)
   }, [stats])
 
-  // --- STATE 1: SEDANG CEK SESI / AUTH ---
+  // --- STATE 1: LOADING SESSION ---
   if (isCheckingAuth) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-        <div className="w-14 h-14 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-600/20 mb-4 animate-pulse">
-          <Vote className="w-7 h-7" />
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3 text-slate-500">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <p className="text-sm font-medium">Memverifikasi status hak suara Anda...</p>
         </div>
-        <p className="text-slate-900 font-semibold text-base">Menyiapkan Bilik Suara...</p>
-        <p className="text-slate-500 text-sm mt-1">Memverifikasi kredensial pemilih Anda</p>
       </div>
     )
   }
 
-  // --- STATE 2: BELUM LOGIN / SESI HILANG ---
+  // --- STATE 2: BELUM LOGIN ---
   if (!voter) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
           className="w-full max-w-md bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-xl shadow-slate-200/50 text-center"
         >
           <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200/60 flex items-center justify-center mx-auto mb-5 shadow-sm">
             <Lock className="w-8 h-8" />
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900">
-            Sesi Voting Tidak Ditemukan
+            Akses Bilik Suara Dibatasi
           </h1>
           <p className="text-sm text-slate-600 mt-2 leading-relaxed">
             Untuk menjaga integritas dan kerahasiaan suara, Anda harus login terlebih dahulu menggunakan Nomor Induk Siswa (NIS) resmi.
@@ -390,7 +454,7 @@ export default function VotePage() {
             Terima Kasih, {voter.full_name}!
           </h1>
           <p className="text-sm text-slate-600 mt-2 leading-relaxed">
-            Anda telah berhasil memberikan suara dalam Pemilihan Ketua & Wakil Ketua OSIS. Setiap siswa hanya memiliki satu hak suara yang sah dan terlindungi kerahasiaannya.
+            Anda telah berhasil memberikan suara dalam Pemilihan Ketua & Wakil Ketua OSIS serta MPK. Setiap siswa hanya memiliki satu hak suara yang sah dan terlindungi kerahasiaannya.
           </p>
 
           <div className="mt-6 p-4 rounded-2xl bg-slate-50 border border-slate-100 text-left text-xs space-y-1.5">
@@ -417,13 +481,12 @@ export default function VotePage() {
     )
   }
 
-  // --- STATE 4: BILIK SUARA AKTIF ---
+  // --- STATE 4: BILIK SUARA AKTIF DENGAN WIZARD OSIS & MPK ---
   return (
-    <div className="min-h-screen bg-slate-50/60 flex flex-col">
+    <div className="min-h-screen bg-slate-50/70 flex flex-col">
       {/* Sticky Modern App Bar */}
-      <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200/80 transition-all">
-        <div className="max-w-4xl mx-auto px-4 py-3">
-          {/* Top Row: Brand & Voter Info (Nama & Kelas Saja) */}
+      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 transition-all shadow-xs">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <BrandLogo size="sm" variant="squircle" />
@@ -437,54 +500,111 @@ export default function VotePage() {
                     LIVE
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-500 leading-none">Bilik Suara OSIS</p>
+                <p className="text-[11px] text-slate-500 leading-none">Bilik Suara Siswa</p>
               </div>
             </div>
 
-            {/* Info Pemilih: Hanya Nama dan Kelas (Tanpa Profil & NIS) */}
-            <div className="text-right px-3.5 py-1.5 rounded-2xl bg-slate-100/90 border border-slate-200/70 max-w-[180px] sm:max-w-xs">
+            {/* Stepper Progress OSIS & MPK */}
+            <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-2xl border border-slate-200/80">
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  step === 1
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : selectedOsisId
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>1. OSIS</span>
+                {selectedOsisId && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (!selectedOsisId && osisCandidates.length > 0) {
+                    toast.error('Silakan tentukan pilihan OSIS terlebih dahulu')
+                  } else {
+                    setStep(2)
+                  }
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  step === 2
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : selectedMpkId
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>2. MPK</span>
+                {selectedMpkId && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+              </button>
+            </div>
+
+            {/* Info Siswa */}
+            <div className="text-right px-3 py-1.5 rounded-2xl bg-slate-100/90 border border-slate-200/70 hidden sm:block max-w-[180px]">
               <p className="text-xs font-bold text-slate-900 truncate leading-tight">
                 {voter.full_name}
               </p>
               <p className="text-[11px] font-medium text-slate-500 truncate leading-none mt-0.5">
-                Kelas: {voter.class}
+                {voter.class}
               </p>
             </div>
-          </div>
-
-          {/* Turnout Progress Bar */}
-          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center gap-3">
-            <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-              <motion.div
-                className="h-full bg-blue-600 rounded-full"
-                initial={{ width: 0 }}
-                animate={{ width: `${turnoutPercentage}%` }}
-                transition={{ duration: 0.8, ease: "easeOut" }}
-              />
-            </div>
-            <p className="text-[11px] font-medium text-slate-500 whitespace-nowrap">
-              Partisipasi: <span className="font-semibold text-slate-800">{stats.votedCount}/{stats.totalVoters}</span> ({turnoutPercentage}%)
-            </p>
           </div>
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-4xl mx-auto w-full px-4 pt-5 pb-32">
-        {/* Banner Instruksi */}
-        <section className="mb-6">
-          <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-sm relative overflow-hidden">
-            <div className="flex items-start gap-3.5">
-              <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <ShieldCheck className="w-5 h-5" />
+      {/* Main Content Area: Horizontal Full-Width Layout */}
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 pt-4 pb-36">
+        {/* Banner Kategori dan Petunjuk */}
+        <section className="mb-4">
+          <div className={`rounded-2xl p-4 sm:p-5 border transition-all relative overflow-hidden ${
+            step === 1 
+              ? 'bg-gradient-to-r from-blue-500/10 via-blue-50 to-white border-blue-200' 
+              : 'bg-gradient-to-r from-indigo-500/10 via-indigo-50 to-white border-indigo-200'
+          }`}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-black text-white text-base shadow-sm ${
+                  step === 1 ? 'bg-blue-600' : 'bg-indigo-600'
+                }`}>
+                  {step === 1 ? '🏛️' : '⚖️'}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full text-white ${
+                      step === 1 ? 'bg-blue-600' : 'bg-indigo-600'
+                    }`}>
+                      Langkah {step} dari 2
+                    </span>
+                    <h1 className="text-base sm:text-lg font-bold text-slate-900">
+                      {step === 1 ? 'Pemilihan Ketua & Wakil Ketua OSIS' : 'Pemilihan Ketua & Wakil Ketua MPK'}
+                    </h1>
+                  </div>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    {step === 1 
+                      ? 'Pilih 1 Pasangan Calon OSIS berikut ini, lalu klik lanjutkan untuk memilih MPK.' 
+                      : 'Pilih 1 Pasangan Calon MPK berikut ini untuk menyelesaikan hak suara Anda.'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-base sm:text-lg font-bold text-slate-900 leading-tight">
-                  Tentukan Pemimpin OSIS Pilihanmu
-                </h1>
-                <p className="text-xs sm:text-sm text-slate-600 mt-1 leading-relaxed">
-                  Kenali visi, misi, dan program kerja masing-masing pasangan calon. Setiap paslon memiliki nomor dan warna khusus untuk memudahkan Anda dalam menentukan pilihan.
-                </p>
+
+              {/* Status Pilihan Sesi Ini */}
+              <div className="flex items-center gap-2 self-start sm:self-center">
+                {step === 1 && selectedOsisCandidate && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-100/80 border border-blue-200 text-blue-900 rounded-xl text-xs font-bold">
+                    <Check className="w-4 h-4 text-blue-600 stroke-[3]" />
+                    <span>Terpilih: Paslon {selectedOsisCandidate.candidate_number}</span>
+                  </div>
+                )}
+                {step === 2 && selectedMpkCandidate && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-100/80 border border-indigo-200 text-indigo-900 rounded-xl text-xs font-bold">
+                    <Check className="w-4 h-4 text-indigo-600 stroke-[3]" />
+                    <span>Terpilih: Paslon {selectedMpkCandidate.candidate_number}</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -492,7 +612,7 @@ export default function VotePage() {
 
         {/* Error Notification */}
         {error && (
-          <div className="mb-6 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm flex items-center gap-3">
+          <div className="mb-4 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm flex items-center gap-3">
             <AlertCircle className="w-5 h-5 flex-shrink-0 text-red-500" />
             <p className="flex-1">{error}</p>
             <button
@@ -504,290 +624,196 @@ export default function VotePage() {
           </div>
         )}
 
-        {/* Candidate Feed */}
+        {/* Candidate Feed: Sejajar Kesamping (Grid Horizontal / Flex No Scroll) */}
         {isLoadingCandidates ? (
-          <div className="space-y-4">
-            {[1, 2].map(n => (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[1, 2, 3].map(n => (
               <div key={n} className="bg-white rounded-3xl p-5 border border-slate-200/80 animate-pulse">
                 <div className="h-6 w-32 bg-slate-200 rounded-full mb-4" />
                 <div className="grid grid-cols-2 gap-3 mb-4">
                   <div className="aspect-[4/5] bg-slate-200 rounded-xl" />
                   <div className="aspect-[4/5] bg-slate-200 rounded-xl" />
                 </div>
-                <div className="h-10 bg-slate-100 rounded-xl mb-3" />
-                <div className="h-16 bg-slate-100 rounded-xl mb-4" />
-                <div className="h-11 bg-slate-200 rounded-xl" />
+                <div className="h-8 bg-slate-100 rounded-xl mb-3" />
+                <div className="h-10 bg-slate-200 rounded-xl" />
               </div>
             ))}
           </div>
-        ) : candidates.length === 0 ? (
-          <div className="bg-white rounded-3xl p-8 border border-slate-200/80 text-center shadow-sm">
+        ) : activeCandidates.length === 0 ? (
+          <div className="bg-white rounded-3xl p-8 sm:p-12 border border-slate-200/80 text-center shadow-sm">
             <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-500 flex items-center justify-center mx-auto mb-3">
               <Users className="w-7 h-7" />
             </div>
-            <h2 className="text-lg font-bold text-slate-900">Belum Ada Kandidat Terdaftar</h2>
+            <h2 className="text-lg font-bold text-slate-900">
+              Belum Ada Paslon {step === 1 ? 'OSIS' : 'MPK'} Terdaftar
+            </h2>
             <p className="text-sm text-slate-500 mt-1 max-w-sm mx-auto">
-              Panitia pemilihan belum menerbitkan daftar pasangan calon aktif. Silakan hubungi pembina atau panitia OSIS.
+              Panitia pemilihan belum mengunggah daftar pasangan calon aktif untuk kategori ini.
             </p>
+            {step === 1 && mpkCandidates.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className="mt-4 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors"
+              >
+                Lanjut ke Pemilihan MPK &rarr;
+              </button>
+            )}
           </div>
         ) : (
-          <div className="space-y-6">
-            {candidates.map((candidate, index) => {
+          <div className={`grid gap-4 sm:gap-6 items-stretch ${
+            activeCandidates.length === 1
+              ? 'grid-cols-1 max-w-md mx-auto'
+              : activeCandidates.length === 2
+              ? 'grid-cols-1 sm:grid-cols-2 max-w-4xl mx-auto'
+              : activeCandidates.length === 3
+              ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+              : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
+          }`}>
+            {activeCandidates.map((candidate, index) => {
               const isSelected = selectedCandidateId === candidate.id
-              const currentTab = activeTabs[candidate.id] || 'visi'
-              const misiItems = parseLines(candidate.misi)
-              const prokerItems = parseLines(candidate.program_kerja)
               const theme = getCandidateTheme(candidate.candidate_number, index)
 
               return (
                 <div
                   key={candidate.id}
-                  onClick={() => setSelectedCandidateId(candidate.id)}
-                  className={`relative rounded-3xl transition-all duration-200 cursor-pointer overflow-hidden border ${
+                  onClick={() => handleSelectCandidate(candidate.id)}
+                  className={`relative rounded-3xl group transition-all duration-300 ease-out cursor-pointer overflow-hidden border flex flex-col justify-between transform hover:-translate-y-2.5 active:scale-[0.98] ${
                     isSelected
                       ? `bg-white ${theme.border} shadow-xl ${theme.shadow} ring-4 ${theme.ring}`
-                      : 'bg-white border-slate-200/80 shadow-sm hover:border-slate-300 hover:shadow-md'
+                      : 'bg-white border-slate-200/80 shadow-sm hover:border-blue-400 hover:shadow-2xl hover:shadow-blue-500/20'
                   }`}
                 >
-                  {/* Selection Glow Indicator */}
+                  {/* Top Header Glow */}
                   {isSelected && (
                     <div className={`h-1.5 w-full ${theme.primary}`} />
                   )}
 
-                  <div className="p-4 sm:p-6">
-                    {/* Header: Badge Nomor Khusus Warna Paslon & Status Seleksi */}
-                    <div className="flex items-center justify-between gap-3 mb-4">
-                      <div className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full ${theme.primary} text-white font-bold text-xs sm:text-sm tracking-wide shadow-sm`}>
-                        <Vote className="w-4 h-4" />
-                        <span>PASLON {String(candidate.candidate_number).padStart(2, '0')}</span>
-                      </div>
+                  <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between">
+                    <div>
+                      {/* Header Badge & Selected State */}
+                      <div className="flex items-center justify-between gap-2 mb-3">
+                        <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full ${theme.primary} text-white font-extrabold text-xs tracking-wide shadow-xs`}>
+                          <Vote className="w-3.5 h-3.5" />
+                          <span>PASLON {String(candidate.candidate_number).padStart(2, '0')}</span>
+                        </div>
 
-                      <div className="flex items-center">
                         {isSelected ? (
-                          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full ${theme.badgeBg} ${theme.textDark} text-xs font-bold border ${theme.badgeBorder}`}>
-                            <Check className="w-3.5 h-3.5 stroke-[3]" />
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full ${theme.badgeBg} ${theme.textDark} text-[11px] font-bold border ${theme.badgeBorder}`}>
+                            <Check className="w-3 h-3 stroke-[3]" />
                             Terpilih
                           </span>
                         ) : (
-                          <span className="text-xs font-semibold text-slate-500 hover:text-slate-900">
-                            Ketuk untuk Memilih
+                          <span className="text-[11px] font-medium text-slate-400">
+                            Ketuk untuk memilih
                           </span>
                         )}
                       </div>
-                    </div>
 
-                    {/* Dual Candidate Showcase: Ketua & Wakil */}
-                    <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-5">
-                      {/* Calon Ketua */}
-                      <div className="flex flex-col">
-                        <div className="aspect-[4/5] relative rounded-2xl overflow-hidden bg-slate-100 border border-slate-200/70 shadow-inner">
-                          {candidate.ketua_photo_url ? (
-                            <Image
-                              src={candidate.ketua_photo_url}
-                              alt={candidate.ketua_name}
-                              fill
-                              className="object-cover"
-                              sizes="(max-width: 768px) 45vw, 25vw"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 p-2 text-center bg-gradient-to-b from-slate-50 to-slate-100">
-                              <User className="w-10 h-10 mb-1 opacity-40 text-slate-500" />
-                              <span className="text-[11px] font-medium text-slate-400">Foto Ketua</span>
+                      {/* Dual Candidate Showcase: Sejajar Ketua & Wakil */}
+                      <div className="grid grid-cols-2 gap-2.5 mb-3">
+                        {/* Ketua */}
+                        <div className="flex flex-col">
+                          <div className="aspect-[4/5] relative rounded-2xl overflow-hidden bg-slate-100 border border-slate-200/70 shadow-inner">
+                            {candidate.ketua_photo_url ? (
+                              <Image
+                                src={candidate.ketua_photo_url}
+                                alt={candidate.ketua_name}
+                                fill
+                                className="object-cover"
+                                sizes="(max-width: 768px) 45vw, 20vw"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 p-2 text-center bg-gradient-to-b from-slate-50 to-slate-100">
+                                <User className="w-8 h-8 mb-1 opacity-40 text-slate-500" />
+                                <span className="text-[10px] font-medium text-slate-400">Foto Ketua</span>
+                              </div>
+                            )}
+                            <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-slate-900/85 backdrop-blur-xs text-white text-[9px] font-bold tracking-wider uppercase">
+                              Ketua
                             </div>
-                          )}
-                          <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-slate-900/85 backdrop-blur-xs text-white text-[10px] font-bold tracking-wider uppercase">
-                            Ketua
+                          </div>
+                          <div className="mt-1.5">
+                            <h2 className="font-bold text-slate-900 text-xs sm:text-sm leading-tight line-clamp-1">
+                              {candidate.ketua_name}
+                            </h2>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              {candidate.ketua_class || '-'}
+                            </p>
                           </div>
                         </div>
-                        <div className="mt-2.5">
-                          <h2 className="font-bold text-slate-900 text-sm sm:text-base leading-tight line-clamp-1">
-                            {candidate.ketua_name}
-                          </h2>
-                          <p className="text-xs text-slate-500 font-medium mt-0.5">
-                            Kelas: {candidate.ketua_class || '-'}
-                          </p>
-                        </div>
-                      </div>
 
-                      {/* Calon Wakil */}
-                      <div className="flex flex-col">
-                        <div className="aspect-[4/5] relative rounded-2xl overflow-hidden bg-slate-100 border border-slate-200/70 shadow-inner">
-                          {candidate.wakil_photo_url ? (
-                            <Image
-                              src={candidate.wakil_photo_url}
-                              alt={candidate.wakil_name}
-                              fill
-                              className="object-cover"
-                              sizes="(max-width: 768px) 45vw, 25vw"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 p-2 text-center bg-gradient-to-b from-slate-50 to-slate-100">
-                              <User className="w-10 h-10 mb-1 opacity-40 text-slate-500" />
-                              <span className="text-[11px] font-medium text-slate-400">Foto Wakil</span>
+                        {/* Wakil */}
+                        <div className="flex flex-col">
+                          <div className="aspect-[4/5] relative rounded-2xl overflow-hidden bg-slate-100 border border-slate-200/70 shadow-inner">
+                            {candidate.wakil_photo_url ? (
+                              <Image
+                                src={candidate.wakil_photo_url}
+                                alt={candidate.wakil_name}
+                                fill
+                                className="object-cover"
+                                sizes="(max-width: 768px) 45vw, 20vw"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 p-2 text-center bg-gradient-to-b from-slate-50 to-slate-100">
+                                <User className="w-8 h-8 mb-1 opacity-40 text-slate-500" />
+                                <span className="text-[10px] font-medium text-slate-400">Foto Wakil</span>
+                              </div>
+                            )}
+                            <div className={`absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded ${theme.wakilTag} backdrop-blur-xs text-white text-[9px] font-bold tracking-wider uppercase`}>
+                              Wakil
                             </div>
-                          )}
-                          <div className={`absolute top-2 left-2 px-2 py-0.5 rounded-md ${theme.wakilTag} backdrop-blur-xs text-white text-[10px] font-bold tracking-wider uppercase`}>
-                            Wakil
+                          </div>
+                          <div className="mt-1.5">
+                            <h2 className="font-bold text-slate-900 text-xs sm:text-sm leading-tight line-clamp-1">
+                              {candidate.wakil_name}
+                            </h2>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              {candidate.wakil_class || '-'}
+                            </p>
                           </div>
                         </div>
-                        <div className="mt-2.5">
-                          <h2 className="font-bold text-slate-900 text-sm sm:text-base leading-tight line-clamp-1">
-                            {candidate.wakil_name}
-                          </h2>
-                          <p className="text-xs text-slate-500 font-medium mt-0.5">
-                            Kelas: {candidate.wakil_class || '-'}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Interactive Tab Switcher: Visi / Misi / Program Kerja */}
-                    <div className="mt-2 border-t border-slate-100 pt-3">
-                      <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl mb-3">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleTabChange(candidate.id, 'visi')
-                          }}
-                          className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${
-                            currentTab === 'visi'
-                              ? `bg-white ${theme.textDark} shadow-xs`
-                              : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>Visi</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleTabChange(candidate.id, 'misi')
-                          }}
-                          className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${
-                            currentTab === 'misi'
-                              ? `bg-white ${theme.textDark} shadow-xs`
-                              : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                        >
-                          <Target className="w-3.5 h-3.5" />
-                          <span>Misi</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleTabChange(candidate.id, 'program')
-                          }}
-                          className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${
-                            currentTab === 'program'
-                              ? `bg-white ${theme.textDark} shadow-xs`
-                              : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                        >
-                          <Sparkles className="w-3.5 h-3.5" />
-                          <span>Program</span>
-                        </button>
                       </div>
 
-                      {/* Tab Content Panel */}
-                      <div className="bg-slate-50/80 rounded-2xl p-3.5 border border-slate-100 text-xs sm:text-sm text-slate-700 leading-relaxed min-h-[90px]">
-                        <AnimatePresence mode="wait">
-                          {currentTab === 'visi' && (
-                            <motion.div
-                              key="visi"
-                              initial={{ opacity: 0, y: 4 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0, y: -4 }}
-                              transition={{ duration: 0.15 }}
-                            >
-                              <p className="italic text-slate-700">
-                                “{candidate.visi || 'Visi belum diisi oleh kandidat.'}”
-                              </p>
-                            </motion.div>
-                          )}
-
-                          {currentTab === 'misi' && (
-                            <motion.div
-                              key="misi"
-                              initial={{ opacity: 0, y: 4 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0, y: -4 }}
-                              transition={{ duration: 0.15 }}
-                              className="space-y-2"
-                            >
-                              {misiItems.length > 0 ? (
-                                misiItems.map((item, idx) => (
-                                  <div key={idx} className="flex items-start gap-2.5">
-                                    <span className={`flex-shrink-0 w-4 h-4 rounded-full ${theme.accentNumberBg} font-bold text-[10px] flex items-center justify-center mt-0.5`}>
-                                      {idx + 1}
-                                    </span>
-                                    <span className="flex-1 text-slate-700">{item}</span>
-                                  </div>
-                                ))
-                              ) : (
-                                <p className="text-slate-500 italic">Misi belum diisi oleh kandidat.</p>
-                              )}
-                            </motion.div>
-                          )}
-
-                          {currentTab === 'program' && (
-                            <motion.div
-                              key="program"
-                              initial={{ opacity: 0, y: 4 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0, y: -4 }}
-                              transition={{ duration: 0.15 }}
-                              className="space-y-2"
-                            >
-                              {prokerItems.length > 0 ? (
-                                prokerItems.map((item, idx) => (
-                                  <div key={idx} className="flex items-start gap-2.5">
-                                    <span className="flex-shrink-0 w-4 h-4 rounded-md bg-slate-200 text-slate-700 flex items-center justify-center mt-0.5">
-                                      <Sparkles className="w-2.5 h-2.5" />
-                                    </span>
-                                    <span className="flex-1 text-slate-700">{item}</span>
-                                  </div>
-                                ))
-                              ) : (
-                                <p className="text-slate-500 italic">Program kerja belum diisi oleh kandidat.</p>
-                              )}
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    </div>
-
-                    {/* Bottom Card Action Button */}
-                    <div className="mt-4 pt-3 border-t border-slate-100">
+                      {/* Tombol Lihat Visi & Misi Dialog */}
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation()
-                          setSelectedCandidateId(candidate.id)
+                          handleOpenDetail(candidate)
                         }}
-                        className={`w-full py-3 px-4 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
-                          isSelected
-                            ? `${theme.primary} text-white shadow-md ${theme.shadow}`
-                            : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200/80'
-                        }`}
+                        className="w-full py-2 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200/70 text-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors mb-3"
                       >
-                        {isSelected ? (
-                          <>
-                            <Check className="w-4 h-4 stroke-[3]" />
-                            <span>Paslon Ini Telah Dipilih</span>
-                          </>
-                        ) : (
-                          <>
-                            <span>Pilih Paslon {String(candidate.candidate_number).padStart(2, '0')}</span>
-                            <ChevronRight className="w-4 h-4" />
-                          </>
-                        )}
+                        <Eye className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Lihat Visi, Misi & Proker</span>
                       </button>
                     </div>
+
+                    {/* Tombol Pilih Paslon */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleSelectCandidate(candidate.id)
+                      }}
+                      className={`w-full py-2.5 px-3 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 ${
+                        isSelected
+                          ? `${theme.primary} text-white shadow-md ${theme.shadow}`
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200/80'
+                      }`}
+                    >
+                      {isSelected ? (
+                        <>
+                          <Check className="w-4 h-4 stroke-[3]" />
+                          <span>Paslon Ini Dipilih</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Pilih Paslon {String(candidate.candidate_number).padStart(2, '0')}</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
               )
@@ -796,195 +822,339 @@ export default function VotePage() {
         )}
       </main>
 
-      {/* Floating Bottom Action Dock (Thumb-Zone Optimized) */}
+      {/* Floating Bottom Action Dock (Thumb-Zone Optimized & Dual Step Navigator) */}
       <div className="fixed bottom-0 inset-x-0 z-30 p-3 sm:p-4 bg-white/95 backdrop-blur-xl border-t border-slate-200/90 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] pb-[max(1rem,env(safe-area-inset-bottom))]">
-        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
-          {selectedCandidate ? (
-            <>
-              <div className="flex items-center gap-3 w-full sm:w-auto">
-                <div className={`w-11 h-11 rounded-2xl ${selectedTheme.primary} text-white font-bold text-base flex items-center justify-center flex-shrink-0 shadow-sm`}>
-                  {String(selectedCandidate.candidate_number).padStart(2, '0')}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <span className={`text-[11px] font-bold ${selectedTheme.text} uppercase tracking-wider block`}>
-                    Paslon Pilihan Anda
-                  </span>
-                  <p className="text-sm font-bold text-slate-900 truncate">
-                    {selectedCandidate.ketua_name} & {selectedCandidate.wakil_name}
-                  </p>
-                </div>
-              </div>
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+          {/* Ringkasan Pilihan di Bawah */}
+          <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto py-1">
+            {/* Box Status OSIS */}
+            <div className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 text-xs flex-shrink-0 ${
+              selectedOsisCandidate 
+                ? 'bg-blue-50 border-blue-200 text-blue-900' 
+                : 'bg-slate-100 border-slate-200 text-slate-500'
+            }`}>
+              <span className="font-bold">OSIS:</span>
+              {selectedOsisCandidate ? (
+                <span className="font-semibold text-blue-700 truncate max-w-[140px]">
+                  Paslon {selectedOsisCandidate.candidate_number} ({selectedOsisCandidate.ketua_name.split(' ')[0]})
+                </span>
+              ) : (
+                <span>Belum dipilih</span>
+              )}
+            </div>
 
+            {/* Box Status MPK */}
+            <div className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 text-xs flex-shrink-0 ${
+              selectedMpkCandidate 
+                ? 'bg-indigo-50 border-indigo-200 text-indigo-900' 
+                : 'bg-slate-100 border-slate-200 text-slate-500'
+            }`}>
+              <span className="font-bold">MPK:</span>
+              {selectedMpkCandidate ? (
+                <span className="font-semibold text-indigo-700 truncate max-w-[140px]">
+                  Paslon {selectedMpkCandidate.candidate_number} ({selectedMpkCandidate.ketua_name.split(' ')[0]})
+                </span>
+              ) : (
+                <span>Belum dipilih</span>
+              )}
+            </div>
+          </div>
+
+          {/* Navigasi Tombol Langkah & Konfirmasi */}
+          <div className="flex items-center gap-2.5 w-full sm:w-auto">
+            {step === 2 && (
               <button
                 type="button"
-                onClick={() => setShowConfirmModal(true)}
-                disabled={loading}
-                className={`w-full sm:w-auto px-6 py-3.5 ${selectedTheme.primary} ${selectedTheme.primaryHover} active:scale-[0.99] text-white font-bold rounded-xl shadow-lg ${selectedTheme.shadow} flex items-center justify-center gap-2 text-sm sm:text-base transition-all`}
+                onClick={() => setStep(1)}
+                className="px-4 py-3 rounded-xl border border-slate-200 text-slate-700 font-semibold text-xs sm:text-sm hover:bg-slate-100 transition-colors flex items-center justify-center gap-1.5"
               >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    <span>Memproses...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Lanjutkan Konfirmasi Suara</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
+                <ChevronLeft className="w-4 h-4" />
+                <span>Ubah OSIS</span>
               </button>
-            </>
-          ) : (
-            <div className="w-full flex items-center justify-between gap-3 py-1">
-              <div className="flex items-center gap-2 text-slate-500 text-xs sm:text-sm">
-                <Info className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                <span>Pilih salah satu kartu paslon di atas untuk melanjutkan hak suara.</span>
-              </div>
+            )}
+
+            {step === 1 ? (
               <button
-                disabled
-                className="hidden sm:inline-flex px-5 py-3 bg-slate-100 text-slate-400 font-semibold rounded-xl text-sm cursor-not-allowed border border-slate-200/60"
+                type="button"
+                onClick={() => {
+                  if (!selectedOsisId && osisCandidates.length > 0) {
+                    toast.error('Silakan tentukan pilihan Ketua & Wakil OSIS terlebih dahulu')
+                    return
+                  }
+                  setStep(2)
+                }}
+                disabled={osisCandidates.length > 0 && !selectedOsisId}
+                className="flex-1 sm:flex-initial px-6 py-3.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-bold rounded-xl shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Belum Ada Pilihan
+                <span>Lanjut ke Pemilihan MPK</span>
+                <ChevronRight className="w-4 h-4" />
               </button>
-            </div>
-          )}
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!selectedMpkId && mpkCandidates.length > 0) {
+                    toast.error('Silakan tentukan pilihan Ketua & Wakil MPK terlebih dahulu')
+                    return
+                  }
+                  setShowConfirmModal(true)
+                }}
+                disabled={mpkCandidates.length > 0 && !selectedMpkId}
+                className="flex-1 sm:flex-initial px-6 py-3.5 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-bold rounded-xl shadow-md shadow-indigo-600/20 flex items-center justify-center gap-2 text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span>Konfirmasi Pilihan Suara</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Interactive Bottom-Sheet Modal Konfirmasi Suara */}
+      {/* Modal Dialog: Visi, Misi & Proker Paslon */}
+      <DialogPrimitive.Root open={Boolean(modalCandidate)} onOpenChange={(open) => !open && setModalCandidate(null)}>
+        <DialogPrimitive.Portal>
+          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm transition-opacity" />
+          <DialogPrimitive.Content className="fixed inset-x-0 bottom-0 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 z-50 w-full sm:max-w-xl bg-white rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl border border-slate-200/90 max-h-[85vh] overflow-y-auto outline-none">
+            {modalCandidate && (
+              <>
+                <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-4 sm:hidden" />
+
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1 rounded-full bg-blue-100 text-blue-800 text-xs font-black">
+                      PASLON {String(modalCandidate.candidate_number).padStart(2, '0')} - {(modalCandidate.category || 'osis').toUpperCase()}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setModalCandidate(null)}
+                    className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  >
+                    Tutup
+                  </button>
+                </div>
+
+                <div className="mt-4 text-center">
+                  <h3 className="font-extrabold text-base sm:text-lg text-slate-900">
+                    {modalCandidate.ketua_name} & {modalCandidate.wakil_name}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Kelas: {modalCandidate.ketua_class} / {modalCandidate.wakil_class}
+                  </p>
+                </div>
+
+                {/* Tabs switcher: visi / misi / proker */}
+                <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl my-4">
+                  <button
+                    type="button"
+                    onClick={() => setModalActiveTab('visi')}
+                    className={`py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      modalActiveTab === 'visi' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600'
+                    }`}
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Visi</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModalActiveTab('misi')}
+                    className={`py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      modalActiveTab === 'misi' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600'
+                    }`}
+                  >
+                    <Target className="w-3.5 h-3.5" />
+                    <span>Misi</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModalActiveTab('program')}
+                    className={`py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      modalActiveTab === 'program' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600'
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Program</span>
+                  </button>
+                </div>
+
+                {/* Konten detail */}
+                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 text-xs sm:text-sm text-slate-700 leading-relaxed min-h-[140px]">
+                  {modalActiveTab === 'visi' && (
+                    <div>
+                      <h4 className="font-bold text-slate-900 mb-2">Visi Calon:</h4>
+                      <p className="italic text-slate-700">“{modalCandidate.visi || 'Visi belum diisi oleh kandidat.'}”</p>
+                    </div>
+                  )}
+
+                  {modalActiveTab === 'misi' && (
+                    <div className="space-y-2">
+                      <h4 className="font-bold text-slate-900 mb-1">Misi Calon:</h4>
+                      {parseLines(modalCandidate.misi).length > 0 ? (
+                        parseLines(modalCandidate.misi).map((item, idx) => (
+                          <div key={idx} className="flex items-start gap-2">
+                            <span className="flex-shrink-0 w-4 h-4 rounded-full bg-blue-100 text-blue-800 font-bold text-[10px] flex items-center justify-center mt-0.5">
+                              {idx + 1}
+                            </span>
+                            <span className="text-slate-700">{item}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-slate-500 italic">Misi belum diisi.</p>
+                      )}
+                    </div>
+                  )}
+
+                  {modalActiveTab === 'program' && (
+                    <div className="space-y-2">
+                      <h4 className="font-bold text-slate-900 mb-1">Program Kerja Unggulan:</h4>
+                      {parseLines(modalCandidate.program_kerja).length > 0 ? (
+                        parseLines(modalCandidate.program_kerja).map((item, idx) => (
+                          <div key={idx} className="flex items-start gap-2">
+                            <span className="flex-shrink-0 w-4 h-4 rounded-md bg-amber-100 text-amber-800 flex items-center justify-center mt-0.5">
+                              <Sparkles className="w-2.5 h-2.5" />
+                            </span>
+                            <span className="text-slate-700">{item}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-slate-500 italic">Program kerja belum diisi.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-slate-100 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleSelectCandidate(modalCandidate.id)
+                      setModalCandidate(null)
+                    }}
+                    className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-colors"
+                  >
+                    Pilih Paslon {modalCandidate.candidate_number} Ini
+                  </button>
+                </div>
+              </>
+            )}
+          </DialogPrimitive.Content>
+        </DialogPrimitive.Portal>
+      </DialogPrimitive.Root>
+
+      {/* Modal Dialog: Konfirmasi Final Suara OSIS & MPK */}
       <DialogPrimitive.Root open={showConfirmModal} onOpenChange={setShowConfirmModal}>
         <DialogPrimitive.Portal>
           <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm transition-opacity" />
-          <DialogPrimitive.Content className="fixed inset-x-0 bottom-0 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 z-50 w-full sm:max-w-lg bg-white rounded-t-3xl sm:rounded-3xl p-5 sm:p-7 shadow-2xl border border-slate-200/90 max-h-[88vh] overflow-y-auto outline-none">
-            {/* Mobile Handle Bar */}
+          <DialogPrimitive.Content className="fixed inset-x-0 bottom-0 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 z-50 w-full sm:max-w-lg bg-white rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl border border-slate-200/90 max-h-[88vh] overflow-y-auto outline-none">
             <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-4 sm:hidden" />
 
-            {/* Header Dialog */}
-            <div className="text-center mb-5">
-              <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center mx-auto mb-3">
+            <div className="text-center mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center mx-auto mb-2.5">
                 <ShieldCheck className="w-6 h-6" />
               </div>
-              <DialogPrimitive.Title className="text-lg sm:text-xl font-bold text-slate-900">
+              <DialogPrimitive.Title className="text-lg font-bold text-slate-900">
                 Konfirmasi Pilihan Suara
               </DialogPrimitive.Title>
-              <DialogPrimitive.Description className="text-xs sm:text-sm text-slate-500 mt-1">
-                Pastikan pilihan Anda sudah benar sebelum dikirimkan secara permanen.
+              <DialogPrimitive.Description className="text-xs text-slate-500 mt-0.5">
+                Pastikan pilihan Paslon OSIS dan Paslon MPK Anda sudah sesuai sebelum dikirimkan.
               </DialogPrimitive.Description>
             </div>
 
-            {selectedCandidate && (
-              <div className="space-y-4">
-                {/* Snapshot Paslon Terpilih */}
-                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80">
-                  <div className="text-center mb-3">
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full ${selectedTheme.primary} text-white text-xs font-bold tracking-wide`}>
-                      <Vote className="w-3.5 h-3.5" />
-                      PASLON {String(selectedCandidate.candidate_number).padStart(2, '0')}
+            <div className="space-y-3">
+              {/* Snapshot Pilihan OSIS */}
+              {selectedOsisCandidate ? (
+                <div className="bg-blue-50/80 rounded-2xl p-3.5 border border-blue-200/80">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-bold text-blue-700 uppercase tracking-wider">
+                      🏛️ Pilihan Ketua & Wakil OSIS
+                    </span>
+                    <span className="px-2 py-0.5 bg-blue-600 text-white rounded-full text-[10px] font-black">
+                      PASLON {selectedOsisCandidate.candidate_number}
                     </span>
                   </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    {/* Calon Ketua */}
-                    <div className="text-center space-y-1.5">
-                      <div className="aspect-square relative w-20 h-20 mx-auto rounded-2xl overflow-hidden bg-slate-200 border-2 border-white shadow-sm">
-                        {selectedCandidate.ketua_photo_url ? (
-                          <Image
-                            src={selectedCandidate.ketua_photo_url}
-                            alt={selectedCandidate.ketua_name}
-                            fill
-                            className="object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-slate-400">
-                            <User className="w-8 h-8 opacity-40" />
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                          Calon Ketua
-                        </span>
-                        <h3 className="text-xs sm:text-sm font-bold text-slate-900 line-clamp-1">
-                          {selectedCandidate.ketua_name}
-                        </h3>
-                        <p className="text-[11px] text-slate-500">{selectedCandidate.ketua_class}</p>
-                      </div>
-                    </div>
-
-                    {/* Calon Wakil */}
-                    <div className="text-center space-y-1.5">
-                      <div className="aspect-square relative w-20 h-20 mx-auto rounded-2xl overflow-hidden bg-slate-200 border-2 border-white shadow-sm">
-                        {selectedCandidate.wakil_photo_url ? (
-                          <Image
-                            src={selectedCandidate.wakil_photo_url}
-                            alt={selectedCandidate.wakil_name}
-                            fill
-                            className="object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-slate-400">
-                            <User className="w-8 h-8 opacity-40" />
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <span className={`text-[10px] font-bold ${selectedTheme.text} uppercase tracking-wider block`}>
-                          Calon Wakil
-                        </span>
-                        <h3 className="text-xs sm:text-sm font-bold text-slate-900 line-clamp-1">
-                          {selectedCandidate.wakil_name}
-                        </h3>
-                        <p className="text-[11px] text-slate-500">{selectedCandidate.wakil_class}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Peringatan Integritas Suara */}
-                <div className="bg-amber-50 border border-amber-200/90 rounded-2xl p-3.5 text-xs text-amber-900 leading-relaxed">
-                  <div className="flex items-start gap-2.5">
-                    <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-bold">Pilihan Bersifat Permanen & Rahasia</p>
-                      <p className="text-amber-800/90 mt-0.5">
-                        Setelah Anda menekan tombol konfirmasi, hak suara Anda langsung dikunci dan tidak dapat diubah kembali.
+                  <div className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-sm text-slate-900 truncate">
+                        {selectedOsisCandidate.ketua_name} & {selectedOsisCandidate.wakil_name}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {selectedOsisCandidate.ketua_class} / {selectedOsisCandidate.wakil_class}
                       </p>
                     </div>
                   </div>
                 </div>
-
-                {/* Action Buttons */}
-                <div className="pt-2 flex flex-col-reverse sm:flex-row gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmModal(false)}
-                    disabled={loading}
-                    className="w-full sm:flex-1 py-3 px-4 rounded-xl border border-slate-200 text-slate-700 font-semibold text-sm hover:bg-slate-50 transition-colors"
-                  >
-                    Periksa Kembali
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleVote}
-                    disabled={loading}
-                    className={`w-full sm:flex-1 py-3 px-4 rounded-xl ${selectedTheme.primary} ${selectedTheme.primaryHover} active:scale-[0.99] text-white font-bold text-sm shadow-md ${selectedTheme.shadow} transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed`}
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Menyimpan Suara...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-4 h-4 stroke-[3]" />
-                        <span>Ya, Kirim Suara Saya</span>
-                      </>
-                    )}
-                  </button>
+              ) : (
+                <div className="p-3 rounded-xl bg-slate-100 text-xs text-slate-500">
+                  Tidak ada pilihan OSIS yang dipilih
                 </div>
+              )}
+
+              {/* Snapshot Pilihan MPK */}
+              {selectedMpkCandidate ? (
+                <div className="bg-indigo-50/80 rounded-2xl p-3.5 border border-indigo-200/80">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider">
+                      ⚖️ Pilihan Ketua & Wakil MPK
+                    </span>
+                    <span className="px-2 py-0.5 bg-indigo-600 text-white rounded-full text-[10px] font-black">
+                      PASLON {selectedMpkCandidate.candidate_number}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-sm text-slate-900 truncate">
+                        {selectedMpkCandidate.ketua_name} & {selectedMpkCandidate.wakil_name}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {selectedMpkCandidate.ketua_class} / {selectedMpkCandidate.wakil_class}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-slate-100 text-xs text-slate-500">
+                  Tidak ada pilihan MPK yang dipilih
+                </div>
+              )}
+
+              {/* Alert Permanen */}
+              <div className="bg-amber-50 border border-amber-200/90 rounded-2xl p-3 text-xs text-amber-900 leading-relaxed flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                <p>
+                  Suara Anda akan disimpan secara permanen dan hak suara Anda akan dikunci untuk kedua pemilihan ini.
+                </p>
               </div>
-            )}
+
+              {/* Tombol Aksi */}
+              <div className="pt-2 flex flex-col-reverse sm:flex-row gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmModal(false)}
+                  disabled={loading}
+                  className="w-full sm:flex-1 py-3 px-4 rounded-xl border border-slate-200 text-slate-700 font-semibold text-xs sm:text-sm hover:bg-slate-50 transition-colors"
+                >
+                  Periksa Kembali
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleVote}
+                  disabled={loading}
+                  className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-bold text-xs sm:text-sm shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Menyimpan Suara...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 stroke-[3]" />
+                      <span>Ya, Kirim Suara Saya</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>

@@ -23,6 +23,7 @@ export interface Database {
           ketua_photo_url?: string | null
           wakil_photo_url?: string | null
           photo_url?: string | null
+          category?: string
           created_at?: string
         }
         Insert: {
@@ -38,6 +39,7 @@ export interface Database {
           ketua_photo_url?: string | null
           wakil_photo_url?: string | null
           photo_url?: string | null
+          category?: string
           created_at?: string
         }
         Update: {
@@ -53,6 +55,7 @@ export interface Database {
           ketua_photo_url?: string | null
           wakil_photo_url?: string | null
           photo_url?: string | null
+          category?: string
           created_at?: string
         }
       }
@@ -87,18 +90,21 @@ export interface Database {
           id: string
           voter_id: string
           candidate_id: string
+          category?: string
           created_at?: string
         }
         Insert: {
           id?: string
           voter_id: string
           candidate_id: string
+          category?: string
           created_at?: string
         }
         Update: {
           id?: string
           voter_id?: string
           candidate_id?: string
+          category?: string
           created_at?: string
         }
       }

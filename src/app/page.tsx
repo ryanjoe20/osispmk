@@ -4,17 +4,17 @@ import { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { motion } from 'framer-motion'
-import { 
-  Vote, 
-  ShieldCheck, 
-  CheckCircle2, 
-  Users, 
-  User, 
-  ArrowRight, 
-  School, 
-  Lock, 
-  ChevronDown, 
-  ChevronUp, 
+import {
+  Vote,
+  ShieldCheck,
+  CheckCircle2,
+  Users,
+  User,
+  ArrowRight,
+  School,
+  Lock,
+  ChevronDown,
+  ChevronUp,
   Search,
   CheckCircle,
   BarChart3,
@@ -82,15 +82,15 @@ function SearchParamsHandler() {
 export default function HomePage() {
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [isLoadingCandidates, setIsLoadingCandidates] = useState(true)
-  
+
   // Modal state for candidate details
   const [selectedCandidateForModal, setSelectedCandidateForModal] = useState<Candidate | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
 
-  const [settings, setSettings] = useState<{ 
+  const [settings, setSettings] = useState<{
     announcement_time: string | null,
-    winner_id: string | null 
-  }>({ 
+    winner_id: string | null
+  }>({
     announcement_time: null,
     winner_id: null
   })
@@ -245,8 +245,8 @@ export default function HomePage() {
 
   const currentYear = new Date().getFullYear()
   const currentPeriod = `${currentYear}/${currentYear + 1}`
-  const isAnnouncementConcluded = settings?.announcement_time 
-    ? new Date(settings.announcement_time).getTime() <= new Date().getTime() 
+  const isAnnouncementConcluded = settings?.announcement_time
+    ? new Date(settings.announcement_time).getTime() <= new Date().getTime()
     : false
 
   return (
@@ -319,7 +319,7 @@ export default function HomePage() {
                   className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50/80 text-blue-900 text-xs sm:text-sm font-semibold border border-blue-200/60 mb-5"
                 >
                   <School className="w-4 h-4 text-blue-600" />
-                  <span>Pemilihan Ketua & Wakil Ketua OSIS • Periode {currentPeriod}</span>
+                  <span>Pemilihan Ketua & Wakil Ketua OSIS - MPK • Periode {currentPeriod}</span>
                 </motion.div>
 
                 {/* Authoritative Headline */}
@@ -333,7 +333,7 @@ export default function HomePage() {
                   <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
                     Pemimpin Masa Depan
                   </span>{' '}
-                  Sekolah
+                  SMK Pratama Mulya Karawang
                 </motion.h1>
 
                 {/* Subtitle */}
@@ -406,7 +406,7 @@ export default function HomePage() {
                 <div className="relative w-full max-w-md lg:max-w-none rounded-3xl bg-white p-2.5 sm:p-3.5 shadow-xl border border-slate-200/90">
                   <div className="relative aspect-square w-full rounded-2xl overflow-hidden bg-slate-100">
                     <Image
-                      src="/images/hero-voting-illustration.jpg"
+                      src="/images/hero-voting-illustration.png"
                       alt="Ilustrasi Siswa Pemilihan E-Voting OSIS"
                       fill
                       priority
@@ -493,8 +493,8 @@ export default function HomePage() {
         {settings?.announcement_time && (
           <section id="pengumuman" className="py-10 bg-slate-100/70 border-b border-slate-200/80">
             <div className="max-w-6xl mx-auto px-4 sm:px-6">
-              <WinnerAnnouncement 
-                announcementTime={settings.announcement_time} 
+              <WinnerAnnouncement
+                announcementTime={settings.announcement_time}
                 winnerId={settings.winner_id}
               />
             </div>
@@ -508,8 +508,8 @@ export default function HomePage() {
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold mb-3 border bg-blue-50 text-blue-700 border-blue-200/80">
                 <BarChart3 className="w-3.5 h-3.5" />
                 <span>
-                  {isAnnouncementConcluded 
-                    ? 'Hasil Resmi Pemilihan Ditetapkan' 
+                  {isAnnouncementConcluded
+                    ? 'Hasil Resmi Pemilihan Ditetapkan'
                     : 'Rekapitulasi Suara Berjalan (Real-time)'}
                 </span>
               </div>
@@ -603,7 +603,7 @@ export default function HomePage() {
                       {votingStats.candidateResults.map((result, idx) => {
                         const isTopCandidate = idx === 0 && votingStats.votedCount > 0
                         return (
-                          <div 
+                          <div
                             key={result.candidate_id}
                             className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-6 shadow-xs"
                           >
@@ -644,12 +644,11 @@ export default function HomePage() {
 
                             {/* Progress Bar */}
                             <div className="w-full bg-slate-100 rounded-full h-3.5 overflow-hidden p-0.5 border border-slate-200/60">
-                              <div 
-                                className={`h-full rounded-full transition-all duration-700 ${
-                                  isTopCandidate 
-                                    ? 'bg-blue-600 shadow-xs' 
-                                    : 'bg-slate-400'
-                                }`}
+                              <div
+                                className={`h-full rounded-full transition-all duration-700 ${isTopCandidate
+                                  ? 'bg-blue-600 shadow-xs'
+                                  : 'bg-slate-400'
+                                  }`}
                                 style={{ width: `${Math.max(result.percentage, 2)}%` }}
                               />
                             </div>
@@ -703,7 +702,7 @@ export default function HomePage() {
                   desc: 'Pastikan pilihanmu tepat sebelum konfirmasi akhir. Suara langsung terekam ke sistem.'
                 }
               ].map((item, index) => (
-                <div 
+                <div
                   key={index}
                   className="bg-white border border-slate-200/80 rounded-2xl p-6 relative flex flex-col justify-between shadow-xs"
                 >
@@ -737,7 +736,7 @@ export default function HomePage() {
                 Daftar Pasangan Calon
               </h2>
               <p className="mt-2 text-sm sm:text-base text-slate-600">
-                Ketahui visi, misi, dan program kerja calon Ketua & Wakil Ketua OSIS
+                Ketahui visi, misi, dan program kerja calon Ketua & Wakil Ketua OSIS - MPK
               </p>
             </div>
 
@@ -764,7 +763,7 @@ export default function HomePage() {
                   return (
                     <article
                       key={candidate.id}
-                      className="group bg-white rounded-3xl border border-slate-200/90 shadow-xs hover:shadow-xl hover:border-blue-200 transition-all duration-300 overflow-hidden flex flex-col"
+                      className="group bg-white rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-2xl hover:shadow-blue-500/20 hover:border-blue-300 transition-all duration-300 ease-out transform hover:-translate-y-2.5 overflow-hidden flex flex-col cursor-pointer"
                     >
                       {/* Ballot Top Header Bar */}
                       <div className="bg-slate-900 px-5 sm:px-6 py-4 flex items-center justify-between text-white border-b border-slate-800">
@@ -866,7 +865,7 @@ export default function HomePage() {
                           <div className="space-y-1.5">
                             {prokerHighlights.length > 0 ? (
                               prokerHighlights.map((proker, pIdx) => (
-                                <div 
+                                <div
                                   key={pIdx}
                                   className="flex items-center gap-2 text-xs text-slate-700 bg-slate-50/60 hover:bg-slate-100/80 px-3 py-2 rounded-xl border border-slate-100/80 transition-colors"
                                 >
@@ -944,8 +943,8 @@ export default function HomePage() {
                 { title: 'Jujur', desc: 'Sistem audit bebas dari intervensi atau kecurangan' },
                 { title: 'Adil', desc: 'Setiap paslon memiliki kesempatan setara' }
               ].map((item, idx) => (
-                <div 
-                  key={idx} 
+                <div
+                  key={idx}
                   className="p-3.5 sm:p-4 rounded-xl bg-white border border-slate-200/70 text-center flex flex-col justify-center shadow-xs"
                 >
                   <span className="font-extrabold text-sm sm:text-base text-blue-700 block">

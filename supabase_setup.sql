@@ -11,9 +11,10 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- 1. PEMBUATAN TABEL & RELASI
 -- ==============================================================================
 
--- Tabel Candidates (Data Pasangan Calon Ketua & Wakil OSIS)
+-- Tabel Candidates (Data Pasangan Calon Ketua & Wakil OSIS / MPK)
 CREATE TABLE IF NOT EXISTS public.candidates (
   id uuid NOT NULL DEFAULT extensions.uuid_generate_v4(),
+  category text NOT NULL DEFAULT 'osis',
   candidate_number integer NOT NULL,
   ketua_name text NOT NULL,
   wakil_name text NOT NULL,
@@ -29,8 +30,8 @@ CREATE TABLE IF NOT EXISTS public.candidates (
   CONSTRAINT candidates_pkey PRIMARY KEY (id)
 ) TABLESPACE pg_default;
 
-CREATE UNIQUE INDEX IF NOT EXISTS candidates_candidate_number_key 
-ON public.candidates USING btree (candidate_number) TABLESPACE pg_default;
+CREATE UNIQUE INDEX IF NOT EXISTS candidates_category_candidate_number_idx 
+ON public.candidates USING btree (category, candidate_number) TABLESPACE pg_default;
 
 
 -- Tabel Voters (Daftar Pemilih Tetap / Siswa)
@@ -40,6 +41,8 @@ CREATE TABLE IF NOT EXISTS public.voters (
   full_name text NOT NULL,
   class text NOT NULL,
   has_voted boolean NULL DEFAULT false,
+  has_voted_osis boolean NULL DEFAULT false,
+  has_voted_mpk boolean NULL DEFAULT false,
   created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
   CONSTRAINT voters_pkey PRIMARY KEY (id),
   CONSTRAINT voters_nis_key UNIQUE (nis)
@@ -51,6 +54,7 @@ CREATE TABLE IF NOT EXISTS public.votes (
   id uuid NOT NULL DEFAULT extensions.uuid_generate_v4(),
   voter_id uuid NULL,
   candidate_id uuid NULL,
+  category text NOT NULL DEFAULT 'osis',
   created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
   CONSTRAINT votes_pkey PRIMARY KEY (id),
   CONSTRAINT votes_candidate_id_fkey FOREIGN KEY (candidate_id) REFERENCES public.candidates (id) ON DELETE CASCADE,

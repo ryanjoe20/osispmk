@@ -66,7 +66,7 @@ export default function VoteSuccess() {
                 Voting Berhasil!
               </h1>
               <p className="text-gray-600">
-                Terima kasih telah berpartisipasi dalam pemilihan OSIS.
+                Terima kasih telah berpartisipasi dalam pemilihan Ketua & Wakil OSIS serta MPK.
                 Suara Anda sangat berarti untuk kemajuan sekolah kita.
               </p>
             </motion.div>

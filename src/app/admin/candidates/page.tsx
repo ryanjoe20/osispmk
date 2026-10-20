@@ -20,6 +20,7 @@ interface Candidate {
   program_kerja: string
   ketua_photo_url?: string
   wakil_photo_url?: string
+  category?: 'osis' | 'mpk'
 }
 
 // Custom Toast Component
@@ -57,7 +58,9 @@ const showNotification = (message: string, type: 'success' | 'error' | 'info' = 
 export default function CandidatesPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [loading, setLoading] = useState(false)
+  const [activeCategoryTab, setActiveCategoryTab] = useState<'osis' | 'mpk'>('osis')
   const [formData, setFormData] = useState({
+    category: 'osis' as 'osis' | 'mpk',
     candidate_number: '',
     ketua_name: '',
     wakil_name: '',
@@ -177,6 +180,7 @@ export default function CandidatesPage() {
       const { error: insertError } = await supabaseClient
         .from('candidates')
         .insert([{
+          category: formData.category,
           candidate_number: parseInt(formData.candidate_number),
           ketua_name: formData.ketua_name,
           wakil_name: formData.wakil_name,
@@ -202,9 +206,10 @@ export default function CandidatesPage() {
         throw insertError
       }
 
-      showNotification('Kandidat berhasil ditambahkan', 'success')
+      showNotification(`Kandidat ${formData.category.toUpperCase()} berhasil ditambahkan`, 'success')
       fetchCandidates()
       setFormData({
+        category: formData.category,
         candidate_number: '',
         ketua_name: '',
         wakil_name: '',
@@ -352,12 +357,46 @@ export default function CandidatesPage() {
             Tambah Kandidat Baru
           </h2>
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Pilihan Kategori Pemilihan */}
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+              <label className="block text-sm font-semibold text-gray-800 mb-2">
+                Pilih Kategori Pemilihan
+              </label>
+              <div className="grid grid-cols-2 gap-3 max-w-md">
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, category: 'osis' }))}
+                  className={`py-2.5 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 border ${
+                    formData.category === 'osis'
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-md'
+                      : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-100'
+                  }`}
+                >
+                  <span>🏛️ Calon OSIS</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, category: 'mpk' }))}
+                  className={`py-2.5 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 border ${
+                    formData.category === 'mpk'
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
+                      : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-100'
+                  }`}
+                >
+                  <span>⚖️ Calon MPK</span>
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Kandidat yang didaftarkan akan dikelompokkan ke dalam pemilihan {formData.category.toUpperCase()}.
+              </p>
+            </div>
+
             {/* Grid untuk input fields */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Nomor Urut */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Nomor Urut
+                  Nomor Urut ({formData.category.toUpperCase()})
                 </label>
                 <input
                   type="number"
@@ -555,6 +594,50 @@ export default function CandidatesPage() {
 
         {/* Daftar Kandidat */}
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+          {/* Header & Tab Filter OSIS / MPK */}
+          <div className="p-5 sm:p-6 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-gray-800">Daftar Pasangan Calon</h2>
+              <p className="text-xs text-gray-500 mt-0.5">Kelola kandidat yang berpartisipasi dalam pemilihan</p>
+            </div>
+
+            <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setActiveCategoryTab('osis')}
+                className={`py-2 px-4 rounded-lg font-bold text-xs sm:text-sm transition-all flex items-center gap-1.5 ${
+                  activeCategoryTab === 'osis'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <span>🏛️ OSIS</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] ${
+                  activeCategoryTab === 'osis' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'
+                }`}>
+                  {candidates.filter(c => (c.category || 'osis') === 'osis').length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveCategoryTab('mpk')}
+                className={`py-2 px-4 rounded-lg font-bold text-xs sm:text-sm transition-all flex items-center gap-1.5 ${
+                  activeCategoryTab === 'mpk'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <span>⚖️ MPK</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] ${
+                  activeCategoryTab === 'mpk' ? 'bg-indigo-500 text-white' : 'bg-gray-200 text-gray-700'
+                }`}>
+                  {candidates.filter(c => c.category === 'mpk').length}
+                </span>
+              </button>
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -586,76 +669,86 @@ export default function CandidatesPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {candidates.map((candidate) => (
-                  <tr key={candidate.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
-                      <span className="px-2 sm:px-3 py-1 rounded-full text-xs sm:text-sm font-medium bg-blue-100 text-blue-800">
-                        {candidate.candidate_number}
-                      </span>
-                    </td>
-                    <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap">
-                      {candidate.ketua_photo_url && (
-                        <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full overflow-hidden">
-                          <Image
-                            src={candidate.ketua_photo_url}
-                            alt={`Foto Ketua ${candidate.ketua_name}`}
-                            width={48}
-                            height={48}
-                            className="h-full w-full object-cover"
-                            priority
-                          />
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {candidate.ketua_name}
-                    </td>
-                    <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {candidate.ketua_class}
-                    </td>
-                    <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap">
-                      {candidate.wakil_photo_url && (
-                        <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full overflow-hidden">
-                          <Image
-                            src={candidate.wakil_photo_url}
-                            alt={`Foto Wakil ${candidate.wakil_name}`}
-                            width={48}
-                            height={48}
-                            className="h-full w-full object-cover"
-                            priority
-                          />
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {candidate.wakil_name}
-                    </td>
-                    <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {candidate.wakil_class}
-                    </td>
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
-                      <div className="flex flex-col sm:flex-row gap-2">
-                        <button
-                          onClick={() => {
-                            setSelectedCandidate(candidate)
-                            setIsDetailModalOpen(true)
-                          }}
-                          className="text-xs sm:text-sm px-2 sm:px-3 py-1 rounded-lg bg-blue-50 text-blue-700 
-                                   hover:bg-blue-100 transition-colors duration-200"
-                        >
-                          Detail
-                        </button>
-                        <button
-                          onClick={() => handleDelete(candidate.id)}
-                          className="text-xs sm:text-sm px-2 sm:px-3 py-1 rounded-lg bg-red-50 text-red-700 
-                                   hover:bg-red-100 transition-colors duration-200"
-                        >
-                          Hapus
-                        </button>
-                      </div>
+                {candidates.filter(c => (c.category || 'osis') === activeCategoryTab).length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-6 py-12 text-center text-sm text-gray-500">
+                      Belum ada kandidat terdaftar untuk pemilihan {activeCategoryTab.toUpperCase()}.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  candidates
+                    .filter(c => (c.category || 'osis') === activeCategoryTab)
+                    .map((candidate) => (
+                      <tr key={candidate.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                          <span className={`px-2.5 sm:px-3 py-1 rounded-full text-xs sm:text-sm font-bold ${
+                            candidate.category === 'mpk' ? 'bg-indigo-100 text-indigo-800' : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            Paslon {candidate.candidate_number}
+                          </span>
+                        </td>
+                        <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap">
+                          {candidate.ketua_photo_url && (
+                            <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full overflow-hidden">
+                              <Image
+                                src={candidate.ketua_photo_url}
+                                alt={`Foto Ketua ${candidate.ketua_name}`}
+                                width={48}
+                                height={48}
+                                className="h-full w-full object-cover"
+                                priority
+                              />
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {candidate.ketua_name}
+                        </td>
+                        <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {candidate.ketua_class}
+                        </td>
+                        <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap">
+                          {candidate.wakil_photo_url && (
+                            <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full overflow-hidden">
+                              <Image
+                                src={candidate.wakil_photo_url}
+                                alt={`Foto Wakil ${candidate.wakil_name}`}
+                                width={48}
+                                height={48}
+                                className="h-full w-full object-cover"
+                                priority
+                              />
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {candidate.wakil_name}
+                        </td>
+                        <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {candidate.wakil_class}
+                        </td>
+                        <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <button
+                              onClick={() => {
+                                setSelectedCandidate(candidate)
+                                setIsDetailModalOpen(true)
+                              }}
+                              className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-semibold hover:bg-blue-100 transition-colors"
+                            >
+                              Detail
+                            </button>
+                            <button
+                              onClick={() => handleDelete(candidate.id)}
+                              className="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-semibold hover:bg-red-100 transition-colors"
+                            >
+                              Hapus
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                )}
               </tbody>
             </table>
           </div>

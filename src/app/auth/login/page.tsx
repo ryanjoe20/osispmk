@@ -142,7 +142,7 @@ export default function VoterLogin() {
             {/* Logo Sekolah */}
             <div className="mb-4 relative w-20 h-20 sm:w-24 sm:h-24 drop-shadow-md transition-transform hover:scale-105 duration-200">
               <Image
-                src="/logo.PNG"
+                src="/logo.png"
                 alt="Logo Sekolah"
                 fill
                 priority
